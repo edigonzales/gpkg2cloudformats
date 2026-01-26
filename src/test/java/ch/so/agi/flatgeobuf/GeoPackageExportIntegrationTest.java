@@ -15,7 +15,7 @@ class GeoPackageExportIntegrationTest {
     @Test
     void exportsIli2dbTablesToFlatGeobuf() throws Exception {
         Path outputDir = Files.createTempDirectory("flatgeobuf-out");
-        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:ch.so.afu.abbaustellen.gpkg")) {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:src/test/data/ch.so.afu.abbaustellen.gpkg")) {
             FlatGeobufExporter exporter = new FlatGeobufExporter(new GeoPackageGeometryReader());
             exporter.exportTables(connection, new Ili2dbTableDescriptorProvider(), outputDir);
         }
