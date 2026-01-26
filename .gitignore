@@ -1,4 +1,6 @@
 .DS_Store
+.gradle/
+build/
 
 # Compiled class file
 *.class
