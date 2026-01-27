@@ -1,0 +1,32 @@
+plugins {
+    id 'java-library'
+}
+
+group = 'org.example'
+version = '0.1.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+dependencies {
+    api 'org.wololo:flatgeobuf:3.26.2'
+    api 'org.locationtech.jts:jts-core:1.19.0'
+    implementation 'org.xerial:sqlite-jdbc:3.46.0.0'
+    implementation 'com.google.guava:guava:33.2.1-jre'
+    implementation 'org.apache.parquet:parquet-hadoop:1.17.0'
+    implementation 'org.apache.parquet:parquet-column:1.17.0'
+    implementation 'org.apache.hadoop:hadoop-common:3.4.0'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.0'
+    testImplementation 'org.junit.jupiter:junit-jupiter-params:5.11.0'
+    testImplementation 'org.assertj:assertj-core:3.26.3'
+    testImplementation 'org.mockito:mockito-core:5.13.0'
+    testImplementation 'org.apache.hadoop:hadoop-mapreduce-client-core:3.4.0'
+}
+
+tasks.withType(Test).configureEach {
+    useJUnitPlatform()
+}
