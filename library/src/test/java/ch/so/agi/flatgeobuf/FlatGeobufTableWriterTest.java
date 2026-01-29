@@ -9,6 +9,7 @@ import java.io.ByteArrayOutputStream;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
+import java.sql.Statement;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.api.Test;
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.LineString;
@@ -64,6 +66,30 @@ class FlatGeobufTableWriterTest {
         assertThat(geometries).hasSize(2);
         geometries.forEach(value -> assertThat(value.getGeometryType())
                 .isEqualTo(geometry.getGeometryType()));
+    }
+
+    @Test
+    void writesFlatGeobufForTablesWithoutGeometry() throws Exception {
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate("CREATE TABLE attributes (id INTEGER, name TEXT)");
+            statement.executeUpdate("INSERT INTO attributes (id, name) VALUES (1, 'alpha')");
+            statement.executeUpdate("INSERT INTO attributes (id, name) VALUES (2, 'beta')");
+        }
+
+        FlatGeobufTableWriter writer = new FlatGeobufTableWriter(new WkbGeometryReader());
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        writer.writeTable(connection, new TableDescriptor("attributes", null, 0, (byte) GeometryType.Unknown), out);
+
+        byte[] bytes = out.toByteArray();
+        HeaderMeta header = FlatGeobufTestSupport.readHeader(bytes);
+        assertThat(header.featuresCount).isEqualTo(2);
+        assertThat(header.geometryType).isEqualTo((byte) GeometryType.Unknown);
+        assertThat(header.indexNodeSize).isZero();
+
+        List<java.util.Map<String, Object>> props = FlatGeobufTestSupport.readProperties(bytes);
+        assertThat(props).hasSize(2);
+        assertThat(props.get(0)).containsEntry("id", 1).containsEntry("name", "alpha");
+        assertThat(props.get(1)).containsEntry("id", 2).containsEntry("name", "beta");
     }
 
     private void createTable(String tableName) throws Exception {

@@ -15,15 +15,18 @@ import java.util.stream.Collectors;
 import org.wololo.flatgeobuf.generated.GeometryType;
 
 public class GeoPackageTableDescriptorProvider implements TableDescriptorProvider {
-    private static final String BASE_QUERY = """
-            SELECT c.table_name,
-                   g.column_name,
-                   g.geometry_type_name,
-                   g.srs_id
-              FROM gpkg_contents c
-              JOIN gpkg_geometry_columns g
-                ON c.table_name = g.table_name
-             WHERE c.data_type = 'features'
+    private static final String TABLE_QUERY = """
+            SELECT tablename
+              FROM T_ILI2DB_TABLE_PROP
+             WHERE setting = 'CLASS'
+            """;
+
+    private static final String GEOMETRY_QUERY = """
+            SELECT table_name,
+                   column_name,
+                   geometry_type_name,
+                   srs_id
+              FROM gpkg_geometry_columns
             """;
 
     private final List<String> tables;
@@ -34,36 +37,76 @@ public class GeoPackageTableDescriptorProvider implements TableDescriptorProvide
 
     @Override
     public List<TableDescriptor> listTables(Connection connection) throws SQLException {
+        List<String> tableNames = loadTableNames(connection);
+        validateTables(Set.copyOf(tableNames));
+
+        Map<String, GeometryInfo> geometryInfo = loadGeometryInfo(connection, tableNames);
         Map<String, TableDescriptor> descriptors = new LinkedHashMap<>();
-        String query = buildQuery();
+        for (String tableName : tableNames) {
+            GeometryInfo info = geometryInfo.get(tableName);
+            if (info == null) {
+                descriptors.put(tableName,
+                        new TableDescriptor(tableName, null, 0, (byte) GeometryType.Unknown));
+            } else {
+                descriptors.put(tableName,
+                        new TableDescriptor(tableName, info.columnName(), info.srid(), toGeometryType(info.geometryType())));
+            }
+        }
+
+        return new ArrayList<>(descriptors.values());
+    }
+
+    private List<String> loadTableNames(Connection connection) throws SQLException {
+        List<String> tableNames = new ArrayList<>();
+        String query = buildTableQuery();
         try (PreparedStatement statement = connection.prepareStatement(query)) {
-            bindTableNames(statement);
+            bindTableNames(statement, tables);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    tableNames.add(resultSet.getString("tablename"));
+                }
+            }
+        }
+        return tableNames;
+    }
+
+    private Map<String, GeometryInfo> loadGeometryInfo(Connection connection, List<String> tableNames) throws SQLException {
+        if (tableNames.isEmpty()) {
+            return Map.of();
+        }
+        String query = buildGeometryQuery(tableNames);
+        Map<String, GeometryInfo> geometryInfo = new LinkedHashMap<>();
+        try (PreparedStatement statement = connection.prepareStatement(query)) {
+            bindTableNames(statement, tableNames);
             try (ResultSet resultSet = statement.executeQuery()) {
                 while (resultSet.next()) {
                     String tableName = resultSet.getString("table_name");
                     String geometryColumn = resultSet.getString("column_name");
                     String geometryType = resultSet.getString("geometry_type_name");
                     int srid = resultSet.getInt("srs_id");
-                    descriptors.put(tableName,
-                            new TableDescriptor(tableName, geometryColumn, srid, toGeometryType(geometryType)));
+                    geometryInfo.put(tableName, new GeometryInfo(geometryColumn, geometryType, srid));
                 }
             }
         }
-        validateTables(descriptors.keySet());
-        return new ArrayList<>(descriptors.values());
+        return geometryInfo;
     }
 
-    private String buildQuery() {
+    private String buildTableQuery() {
         if (tables.isEmpty()) {
-            return BASE_QUERY;
+            return TABLE_QUERY;
         }
         String placeholders = tables.stream().map(value -> "?").collect(Collectors.joining(", "));
-        return BASE_QUERY + " AND c.table_name IN (" + placeholders + ")";
+        return TABLE_QUERY + " AND tablename IN (" + placeholders + ")";
     }
 
-    private void bindTableNames(PreparedStatement statement) throws SQLException {
-        for (int index = 0; index < tables.size(); index++) {
-            statement.setString(index + 1, tables.get(index));
+    private String buildGeometryQuery(List<String> tableNames) {
+        String placeholders = tableNames.stream().map(value -> "?").collect(Collectors.joining(", "));
+        return GEOMETRY_QUERY + " WHERE table_name IN (" + placeholders + ")";
+    }
+
+    private void bindTableNames(PreparedStatement statement, List<String> names) throws SQLException {
+        for (int index = 0; index < names.size(); index++) {
+            statement.setString(index + 1, names.get(index));
         }
     }
 
@@ -90,5 +133,8 @@ public class GeoPackageTableDescriptorProvider implements TableDescriptorProvide
             case "MULTIPOLYGON" -> (byte) GeometryType.MultiPolygon;
             default -> throw new SQLException("Unsupported geometry type: " + geometryType);
         };
+    }
+
+    private record GeometryInfo(String columnName, String geometryType, int srid) {
     }
 }

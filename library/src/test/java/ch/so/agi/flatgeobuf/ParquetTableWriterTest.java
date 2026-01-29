@@ -68,4 +68,25 @@ class ParquetTableWriterTest {
 
         assertThat(options.rowGroupSize()).isEqualTo(512);
     }
+
+    @Test
+    void writesParquetWithoutGeometryColumn() throws Exception {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite::memory:");
+             Statement statement = connection.createStatement()) {
+            statement.executeUpdate("CREATE TABLE attributes (id INTEGER, name TEXT)");
+            statement.executeUpdate("INSERT INTO attributes (id, name) VALUES (1, 'alpha')");
+            statement.executeUpdate("INSERT INTO attributes (id, name) VALUES (2, 'beta')");
+
+            TableDescriptor descriptor = new TableDescriptor("attributes", null, 0, (byte) 0);
+            ParquetTableWriter writer = new ParquetTableWriter(new WkbGeometryReader());
+            Path outputFile = tempDir.resolve("attributes.parquet");
+            writer.writeTable(connection, descriptor, outputFile, writer.defaultOptions());
+
+            try (ParquetFileReader reader = ParquetFileReader.open(new LocalInputFile(outputFile))) {
+                MessageType schema = reader.getFooter().getFileMetaData().getSchema();
+                List<String> fieldNames = schema.getFields().stream().map(field -> field.getName()).toList();
+                assertThat(fieldNames).containsExactly("id", "name");
+            }
+        }
+    }
 }

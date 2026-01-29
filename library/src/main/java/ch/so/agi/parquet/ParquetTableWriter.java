@@ -95,14 +95,16 @@ public class ParquetTableWriter implements TableWriter<ParquetTableWriter.Parque
         List<ParquetField> fields = new ArrayList<>();
         for (int i = 1; i <= metaData.getColumnCount(); i++) {
             String name = metaData.getColumnName(i);
-            if (name.equalsIgnoreCase(table.geometryColumn())) {
+            if (table.hasGeometry() && name.equalsIgnoreCase(table.geometryColumn())) {
                 continue;
             }
             int sqlType = metaData.getColumnType(i);
             boolean required = metaData.isNullable(i) == ResultSetMetaData.columnNoNulls;
             fields.add(buildField(name, sqlType, required));
         }
-        fields.add(buildGeometryField(table, options));
+        if (table.hasGeometry()) {
+            fields.add(buildGeometryField(table, options));
+        }
         return fields;
     }
 

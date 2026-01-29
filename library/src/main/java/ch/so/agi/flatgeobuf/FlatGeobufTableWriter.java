@@ -73,6 +73,7 @@ public class FlatGeobufTableWriter implements TableWriter<FlatGeobufTableWriter.
 
     public void writeTable(Connection connection, TableDescriptor table, OutputStream outputStream, int indexNodeSize)
             throws SQLException, IOException {
+        boolean hasGeometry = table.hasGeometry();
         List<ColumnSpec> columnSpecs = new ArrayList<>();
         List<FeatureItem> items = new ArrayList<>();
         List<FeatureOffset> featureOffsets = new ArrayList<>();
@@ -88,33 +89,40 @@ public class FlatGeobufTableWriter implements TableWriter<FlatGeobufTableWriter.
             FlatGeobufPropertiesWriter propertiesWriter = new FlatGeobufPropertiesWriter(columnSpecs);
             int rowIndex = 0;
             while (resultSet.next()) {
-                Geometry geometry = geometryReader.readGeometry(resultSet, table.geometryColumn());
-                if (geometry == null) {
-                    continue;
+                Geometry geometry = null;
+                Geometry normalized = null;
+                Envelope envelope = null;
+                if (hasGeometry) {
+                    geometry = geometryReader.readGeometry(resultSet, table.geometryColumn());
+                    if (geometry == null) {
+                        continue;
+                    }
+                    normalized = normalizeGeometry(geometry, table.geometryType());
+                    envelope = normalized.getEnvelopeInternal();
+                    if (rowIndex == 0) {
+                        datasetEnvelope.init(envelope);
+                    } else {
+                        datasetEnvelope.expandToInclude(envelope);
+                    }
                 }
-                Geometry normalized = normalizeGeometry(geometry, table.geometryType());
-                Envelope envelope = normalized.getEnvelopeInternal();
-                if (rowIndex == 0) {
-                    datasetEnvelope.init(envelope);
-                } else {
-                    datasetEnvelope.expandToInclude(envelope);
-                }
-                byte[] featureBytes = encodeFeature(normalized, table.geometryType(), propertiesWriter, resultSet);
-                FeatureOffset offset = new FeatureOffset(rowIndex == 0 ? 0 : featureOffsets.get(rowIndex - 1).offset + featureOffsets.get(rowIndex - 1).size,
-                        featureBytes.length);
+                byte[] featureBytes = encodeFeature(normalized, table.geometryType(), propertiesWriter, resultSet, hasGeometry);
+                long previousOffset = rowIndex == 0 ? 0 : featureOffsets.get(rowIndex - 1).offset + featureOffsets.get(rowIndex - 1).size;
+                FeatureOffset offset = new FeatureOffset(previousOffset, featureBytes.length);
                 featureOffsets.add(offset);
                 tmpOut.write(featureBytes);
 
-                FeatureItem item = new FeatureItem();
-                item.nodeItem = new NodeItem(envelope.getMinX(), envelope.getMinY(), envelope.getMaxX(), envelope.getMaxY());
-                item.offset = rowIndex;
-                item.size = featureBytes.length;
-                items.add(item);
+                if (hasGeometry) {
+                    FeatureItem item = new FeatureItem();
+                    item.nodeItem = new NodeItem(envelope.getMinX(), envelope.getMinY(), envelope.getMaxX(), envelope.getMaxY());
+                    item.offset = rowIndex;
+                    item.size = featureBytes.length;
+                    items.add(item);
+                }
                 rowIndex++;
             }
         }
 
-        writeFlatGeobuf(table, indexNodeSize, columnSpecs, items, featureOffsets, datasetEnvelope, tempFile, outputStream);
+        writeFlatGeobuf(table, hasGeometry, indexNodeSize, columnSpecs, items, featureOffsets, datasetEnvelope, tempFile, outputStream);
     }
 
     public record FlatGeobufWriteOptions(int indexNodeSize) {
@@ -144,7 +152,7 @@ public class FlatGeobufTableWriter implements TableWriter<FlatGeobufTableWriter.
         List<ColumnSpec> columns = new ArrayList<>();
         for (int i = 1; i <= metaData.getColumnCount(); i++) {
             String name = metaData.getColumnName(i);
-            if (name.equalsIgnoreCase(geometryColumn)) {
+            if (geometryColumn != null && name.equalsIgnoreCase(geometryColumn)) {
                 continue;
             }
             int sqlType = metaData.getColumnType(i);
@@ -214,19 +222,26 @@ public class FlatGeobufTableWriter implements TableWriter<FlatGeobufTableWriter.
         throw new SQLException("Unexpected geometry type: " + geometry.getGeometryType());
     }
 
-    private static byte[] encodeFeature(Geometry geometry, byte geometryType, FlatGeobufPropertiesWriter propertiesWriter,
-                                        ResultSet resultSet) throws SQLException {
+    private static byte[] encodeFeature(Geometry geometry,
+                                        byte geometryType,
+                                        FlatGeobufPropertiesWriter propertiesWriter,
+                                        ResultSet resultSet,
+                                        boolean hasGeometry) throws SQLException {
         FlatBufferBuilder builder = new FlatBufferBuilder();
-        int geometryOffset;
-        try {
-            geometryOffset = GeometryConversions.serialize(builder, geometry, geometryType);
-        } catch (IOException e) {
-            throw new SQLException("Unable to serialize geometry.", e);
+        int geometryOffset = 0;
+        if (hasGeometry) {
+            try {
+                geometryOffset = GeometryConversions.serialize(builder, geometry, geometryType);
+            } catch (IOException e) {
+                throw new SQLException("Unable to serialize geometry.", e);
+            }
         }
         byte[] properties = propertiesWriter.write(resultSet);
         int propertiesOffset = properties.length == 0 ? 0 : Feature.createPropertiesVector(builder, properties);
         Feature.startFeature(builder);
-        Feature.addGeometry(builder, geometryOffset);
+        if (hasGeometry) {
+            Feature.addGeometry(builder, geometryOffset);
+        }
         if (properties.length > 0) {
             Feature.addProperties(builder, propertiesOffset);
         }
@@ -236,6 +251,7 @@ public class FlatGeobufTableWriter implements TableWriter<FlatGeobufTableWriter.
     }
 
     private static void writeFlatGeobuf(TableDescriptor table,
+                                        boolean hasGeometry,
                                         int indexNodeSize,
                                         List<ColumnSpec> columnSpecs,
                                         List<FeatureItem> items,
@@ -250,15 +266,16 @@ public class FlatGeobufTableWriter implements TableWriter<FlatGeobufTableWriter.
             header.name = table.tableName();
             header.geometryType = table.geometryType();
             header.srid = table.srid();
-            header.envelope = items.isEmpty() ? null : datasetEnvelope;
-            header.featuresCount = items.size();
-            header.indexNodeSize = items.isEmpty() ? 0 : indexNodeSize;
+            header.envelope = hasGeometry && !items.isEmpty() ? datasetEnvelope : null;
+            header.featuresCount = featureOffsets.size();
+            header.indexNodeSize = hasGeometry && !items.isEmpty() ? indexNodeSize : 0;
             header.columns = columnSpecs.stream().map(ColumnSpec::columnMeta).toList();
             FlatBufferBuilder builder = new FlatBufferBuilder();
             HeaderMeta.write(header, bufferedOut, builder);
 
-            List<FeatureItem> sortedItems = items;
+            List<FeatureOffset> offsetsToWrite = featureOffsets;
             if (header.indexNodeSize > 0) {
+                List<FeatureItem> sortedItems = items;
                 NodeItem extent = PackedRTree.calcExtent(sortedItems);
                 PackedRTree.hilbertSort(sortedItems, extent);
                 long offset = 0;
@@ -269,12 +286,14 @@ public class FlatGeobufTableWriter implements TableWriter<FlatGeobufTableWriter.
                 }
                 PackedRTree tree = new PackedRTree(sortedItems, (short) header.indexNodeSize);
                 tree.write(bufferedOut);
+                offsetsToWrite = sortedItems.stream()
+                        .map(item -> featureOffsets.get((int) item.offset))
+                        .toList();
             }
 
             bufferedOut.flush();
             try (var randomAccessFile = new java.io.RandomAccessFile(tempFile, "r")) {
-                for (FeatureItem item : sortedItems) {
-                    FeatureOffset featureOffset = featureOffsets.get((int) item.offset);
+                for (FeatureOffset featureOffset : offsetsToWrite) {
                     byte[] buffer = new byte[featureOffset.size];
                     randomAccessFile.seek(featureOffset.offset);
                     randomAccessFile.readFully(buffer);

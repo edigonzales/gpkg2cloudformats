@@ -9,7 +9,7 @@ public final class TableDescriptor {
 
     public TableDescriptor(String tableName, String geometryColumn, int srid, byte geometryType) {
         this.tableName = Objects.requireNonNull(tableName, "tableName");
-        this.geometryColumn = Objects.requireNonNull(geometryColumn, "geometryColumn");
+        this.geometryColumn = geometryColumn;
         this.srid = srid;
         this.geometryType = geometryType;
     }
@@ -20,6 +20,10 @@ public final class TableDescriptor {
 
     public String geometryColumn() {
         return geometryColumn;
+    }
+
+    public boolean hasGeometry() {
+        return geometryColumn != null && !geometryColumn.isBlank();
     }
 
     public int srid() {
