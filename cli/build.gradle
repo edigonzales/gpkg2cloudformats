@@ -21,6 +21,7 @@ dependencies {
 
 application {
     mainClass = 'ch.so.agi.cli.Gpkg2CloudFormatCli'
+    applicationName = 'gpkg2cloudformats-cli'
 }
 
 tasks.withType(Test).configureEach {
