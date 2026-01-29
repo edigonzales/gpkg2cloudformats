@@ -19,6 +19,8 @@ import org.junit.jupiter.api.Test;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.io.WKBWriter;
+import org.wololo.flatgeobuf.HeaderMeta;
+import org.wololo.flatgeobuf.generated.ColumnType;
 import org.wololo.flatgeobuf.generated.GeometryType;
 
 class FlatGeobufDateTimeTest {
@@ -45,6 +47,13 @@ class FlatGeobufDateTimeTest {
             FlatGeobufTableWriter writer = new FlatGeobufTableWriter(new WkbGeometryReader());
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             writer.writeTable(connection, new TableDescriptor("events", "geom", 4326, (byte) GeometryType.Point), out);
+
+            HeaderMeta header = FlatGeobufTestSupport.readHeader(out.toByteArray());
+            var dateColumn = header.columns.stream()
+                    .filter(column -> column.name.equals("created_date"))
+                    .findFirst()
+                    .orElseThrow();
+            assertThat(dateColumn.type).isEqualTo((byte) ColumnType.String);
 
             List<Map<String, Object>> props = FlatGeobufTestSupport.readProperties(out.toByteArray());
             assertThat(props).hasSize(1);

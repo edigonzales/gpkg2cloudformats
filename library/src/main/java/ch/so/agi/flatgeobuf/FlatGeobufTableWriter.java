@@ -149,6 +149,7 @@ public class FlatGeobufTableWriter implements TableWriter<FlatGeobufTableWriter.
             }
             int sqlType = metaData.getColumnType(i);
             int columnType = mapColumnType(sqlType);
+            boolean dateOnly = sqlType == Types.DATE;
             ColumnMeta columnMeta = new ColumnMeta();
             columnMeta.name = name;
             columnMeta.type = (byte) columnType;
@@ -156,7 +157,7 @@ public class FlatGeobufTableWriter implements TableWriter<FlatGeobufTableWriter.
             columnMeta.width = metaData.getColumnDisplaySize(i);
             columnMeta.precision = metaData.getPrecision(i);
             columnMeta.scale = metaData.getScale(i);
-            columns.add(new ColumnSpec(name, sqlType, columnType, columnMeta));
+            columns.add(new ColumnSpec(name, sqlType, columnType, dateOnly, columnMeta));
         }
         return columns;
     }
@@ -170,7 +171,8 @@ public class FlatGeobufTableWriter implements TableWriter<FlatGeobufTableWriter.
             case Types.FLOAT, Types.REAL -> ColumnType.Float;
             case Types.DOUBLE, Types.NUMERIC, Types.DECIMAL -> ColumnType.Double;
             case Types.BOOLEAN, Types.BIT -> ColumnType.Bool;
-            case Types.DATE, Types.TIME, Types.TIMESTAMP, Types.TIMESTAMP_WITH_TIMEZONE -> ColumnType.DateTime;
+            case Types.DATE -> ColumnType.String;
+            case Types.TIME, Types.TIMESTAMP, Types.TIMESTAMP_WITH_TIMEZONE -> ColumnType.DateTime;
             case Types.BINARY, Types.VARBINARY, Types.LONGVARBINARY, Types.BLOB -> ColumnType.Binary;
             default -> ColumnType.String;
         };
@@ -284,7 +286,7 @@ public class FlatGeobufTableWriter implements TableWriter<FlatGeobufTableWriter.
         }
     }
 
-    record ColumnSpec(String name, int sqlType, int columnType, ColumnMeta columnMeta) {
+    record ColumnSpec(String name, int sqlType, int columnType, boolean dateOnly, ColumnMeta columnMeta) {
     }
 
     record FeatureOffset(long offset, int size) {

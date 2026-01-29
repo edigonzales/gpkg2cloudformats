@@ -6,6 +6,7 @@ import java.sql.Blob;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -28,7 +29,7 @@ class FlatGeobufPropertiesWriter {
             if (value == null) {
                 continue;
             }
-            PropertyBuffer buffer = encodeValue(i, column.columnType(), value);
+            PropertyBuffer buffer = encodeValue(i, column, value);
             buffers.add(buffer);
             totalSize += buffer.size();
         }
@@ -58,8 +59,10 @@ class FlatGeobufPropertiesWriter {
         return value;
     }
 
-    private static PropertyBuffer encodeValue(int columnIndex, int columnType, Object value) throws SQLException {
+    private static PropertyBuffer encodeValue(int columnIndex, FlatGeobufTableWriter.ColumnSpec column, Object value)
+            throws SQLException {
         ByteBuffer buffer;
+        int columnType = column.columnType();
         return switch (columnType) {
             case ColumnType.Byte -> PropertyBuffer.fixed(columnIndex, 1, (bb) -> bb.put(((Number) value).byteValue()));
             case ColumnType.UByte -> PropertyBuffer.fixed(columnIndex, 1, (bb) -> bb.put((byte) ((Number) value).intValue()));
@@ -73,7 +76,7 @@ class FlatGeobufPropertiesWriter {
             case ColumnType.Float -> PropertyBuffer.fixed(columnIndex, Float.BYTES, (bb) -> bb.putFloat(((Number) value).floatValue()));
             case ColumnType.Double -> PropertyBuffer.fixed(columnIndex, Double.BYTES, (bb) -> bb.putDouble(((Number) value).doubleValue()));
             case ColumnType.String, ColumnType.Json, ColumnType.DateTime -> {
-                String text = normalizeString(value, columnType == ColumnType.DateTime);
+                String text = normalizeString(value, columnType == ColumnType.DateTime, column.dateOnly());
                 byte[] bytes = text.getBytes(java.nio.charset.StandardCharsets.UTF_8);
                 buffer = ByteBuffer.allocate(Integer.BYTES + bytes.length).order(ByteOrder.LITTLE_ENDIAN);
                 buffer.putInt(bytes.length);
@@ -91,7 +94,10 @@ class FlatGeobufPropertiesWriter {
         };
     }
 
-    private static String normalizeString(Object value, boolean dateTime) {
+    private static String normalizeString(Object value, boolean dateTime, boolean dateOnly) {
+        if (dateOnly) {
+            return normalizeDate(value);
+        }
         if (!dateTime) {
             return value.toString();
         }
@@ -106,6 +112,19 @@ class FlatGeobufPropertiesWriter {
         }
         if (value instanceof OffsetDateTime offsetDateTime) {
             return offsetDateTime.toString();
+        }
+        return value.toString();
+    }
+
+    private static String normalizeDate(Object value) {
+        if (value instanceof java.sql.Date date) {
+            return date.toLocalDate().toString();
+        }
+        if (value instanceof java.time.LocalDate localDate) {
+            return localDate.toString();
+        }
+        if (value instanceof java.util.Date date) {
+            return Instant.ofEpochMilli(date.getTime()).atZone(ZoneOffset.UTC).toLocalDate().toString();
         }
         return value.toString();
     }
