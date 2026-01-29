@@ -38,3 +38,11 @@ tasks.named('jar', Jar) {
     }
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
+
+tasks.named('distTar', Tar) {
+    archiveFileName = 'gpkg2cloudformats-cli.tar'
+}
+
+tasks.named('distZip', Zip) {
+    archiveFileName = 'gpkg2cloudformats-cli.zip'
+}
