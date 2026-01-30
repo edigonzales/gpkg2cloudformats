@@ -196,12 +196,23 @@ public class ParquetTableWriter implements TableWriter<ParquetTableWriter.Parque
     }
 
     private static ParquetField buildGeometryField(TableDescriptor table, ParquetWriteOptions options) {
+        String crs = resolveCrs(table, options);
         LogicalTypeAnnotation logicalType = options.geometryLogicalType() == GeometryLogicalType.GEOGRAPHY
-                ? LogicalTypeAnnotation.geographyType(options.geometryEncoding(), options.edgeInterpolationAlgorithm())
-                : LogicalTypeAnnotation.geometryType(options.geometryEncoding());
+                ? LogicalTypeAnnotation.geographyType(crs, options.edgeInterpolationAlgorithm())
+                : LogicalTypeAnnotation.geometryType(crs);
         return new ParquetField(table.geometryColumn(), false,
                 PrimitiveTypeName.BINARY, logicalType, true, rs -> null,
                 (consumer, value) -> consumer.addBinary(Binary.fromConstantByteArray((byte[]) value)));
+    }
+
+    private static String resolveCrs(TableDescriptor table, ParquetWriteOptions options) {
+        if (options.geometryCrs() != null && !options.geometryCrs().isBlank()) {
+            return options.geometryCrs();
+        }
+        if (table.srid() > 0) {
+            return "srid:" + table.srid();
+        }
+        return LogicalTypeAnnotation.DEFAULT_CRS;
     }
 
     private static LocalDate coerceDate(Object raw) {
@@ -270,7 +281,7 @@ public class ParquetTableWriter implements TableWriter<ParquetTableWriter.Parque
 
     public record ParquetWriteOptions(long rowGroupSize,
                                       GeometryLogicalType geometryLogicalType,
-                                      String geometryEncoding,
+                                      String geometryCrs,
                                       EdgeInterpolationAlgorithm edgeInterpolationAlgorithm) {
         public static Builder builder() {
             return new Builder();
@@ -279,7 +290,7 @@ public class ParquetTableWriter implements TableWriter<ParquetTableWriter.Parque
         public static final class Builder {
             private Long rowGroupSize;
             private GeometryLogicalType geometryLogicalType = GeometryLogicalType.GEOMETRY;
-            private String geometryEncoding = "WKB";
+            private String geometryCrs;
             private EdgeInterpolationAlgorithm edgeInterpolationAlgorithm = LogicalTypeAnnotation.DEFAULT_ALGO;
 
             public Builder rowGroupSize(long rowGroupSize) {
@@ -295,8 +306,8 @@ public class ParquetTableWriter implements TableWriter<ParquetTableWriter.Parque
                 return this;
             }
 
-            public Builder geometryEncoding(String geometryEncoding) {
-                this.geometryEncoding = geometryEncoding;
+            public Builder geometryCrs(String geometryCrs) {
+                this.geometryCrs = geometryCrs;
                 return this;
             }
 
@@ -309,7 +320,7 @@ public class ParquetTableWriter implements TableWriter<ParquetTableWriter.Parque
                 long resolvedRowGroupSize = rowGroupSize == null
                         ? ParquetWriter.DEFAULT_BLOCK_SIZE
                         : rowGroupSize;
-                return new ParquetWriteOptions(resolvedRowGroupSize, geometryLogicalType, geometryEncoding,
+                return new ParquetWriteOptions(resolvedRowGroupSize, geometryLogicalType, geometryCrs,
                         edgeInterpolationAlgorithm);
             }
         }

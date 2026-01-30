@@ -55,6 +55,8 @@ class ParquetTableWriterTest {
                 PrimitiveType geomType = schema.getType("geom").asPrimitiveType();
                 LogicalTypeAnnotation logicalType = geomType.getLogicalTypeAnnotation();
                 assertThat(logicalType).isInstanceOf(LogicalTypeAnnotation.GeometryLogicalTypeAnnotation.class);
+                String crs = ((LogicalTypeAnnotation.GeometryLogicalTypeAnnotation) logicalType).getCrs();
+                assertThat(crs).isEqualTo("srid:2056");
                 assertThat(reader.getFooter().getBlocks()).isNotEmpty();
             }
         }

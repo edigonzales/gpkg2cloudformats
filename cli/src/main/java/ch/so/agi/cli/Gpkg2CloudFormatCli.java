@@ -5,6 +5,7 @@ import ch.so.agi.cloudformats.GeoPackageTableDescriptorProvider;
 import ch.so.agi.cloudformats.TableDescriptorProvider;
 import ch.so.agi.flatgeobuf.FlatGeobufExporter;
 import ch.so.agi.parquet.ParquetExporter;
+import ch.so.agi.parquet.ParquetTableWriter;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -16,8 +17,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-
 public final class Gpkg2CloudFormatCli {
+    private static final String OPTION_PARQUET_ROW_GROUP_SIZE = "--parquet-row-group-size";
+    private static final long DEFAULT_PARQUET_ROW_GROUP_SIZE = ParquetTableWriter.ParquetWriteOptions.builder()
+            .build()
+            .rowGroupSize();
+
     private Gpkg2CloudFormatCli() {
     }
 
@@ -51,7 +56,8 @@ public final class Gpkg2CloudFormatCli {
                   --output   Verzeichnis fuer exportierte Dateien (muss existieren)
                   --tables   Optionale, mit Semikolon getrennte Liste von Tabellennamen in doppelten Anfuehrungszeichen
                   --format   flatgeobuf oder parquet
-                """.trim();
+                  --parquet-row-group-size  Row group size fuer parquet in Bytes (Default: %d)
+                """.formatted(DEFAULT_PARQUET_ROW_GROUP_SIZE).trim();
     }
 
     private static final class Runner {
@@ -76,6 +82,11 @@ public final class Gpkg2CloudFormatCli {
 
             List<String> tables = parseTables(options.get("--tables"));
             Format format = Format.from(formatValue);
+            Long parquetRowGroupSize = parseOptionalLong(options, OPTION_PARQUET_ROW_GROUP_SIZE);
+
+            if (format != Format.PARQUET && parquetRowGroupSize != null) {
+                throw new IllegalArgumentException(OPTION_PARQUET_ROW_GROUP_SIZE + " ist nur fuer parquet zulaessig.");
+            }
 
             try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + input.toAbsolutePath())) {
                 TableDescriptorProvider provider = new GeoPackageTableDescriptorProvider(tables);
@@ -86,7 +97,11 @@ public final class Gpkg2CloudFormatCli {
                     }
                     case PARQUET -> {
                         ParquetExporter exporter = new ParquetExporter(new GeoPackageGeometryReader());
-                        exporter.exportTables(connection, provider, outputDir);
+                        ParquetTableWriter.ParquetWriteOptions.Builder parquetOptions = ParquetTableWriter.ParquetWriteOptions.builder();
+                        if (parquetRowGroupSize != null) {
+                            parquetOptions.rowGroupSize(parquetRowGroupSize);
+                        }
+                        exporter.exportTables(connection, provider, outputDir, parquetOptions.build());
                     }
                 }
             } catch (SQLException e) {
@@ -146,6 +161,18 @@ public final class Gpkg2CloudFormatCli {
                 tables.add(table);
             }
             return tables;
+        }
+
+        private Long parseOptionalLong(Map<String, String> options, String name) {
+            String value = options.get(name);
+            if (value == null || value.isBlank()) {
+                return null;
+            }
+            try {
+                return Long.parseLong(value);
+            } catch (NumberFormatException e) {
+                throw new IllegalArgumentException("Ungueltiger Wert fuer " + name + ": " + value);
+            }
         }
     }
 

@@ -46,7 +46,8 @@ class Gpkg2CloudFormatCliTest {
         int exitCode = runCli(
                 "--input", geopackage.toString(),
                 "--output", outputDir.toString(),
-                "--format", "parquet");
+                "--format", "parquet",
+                "--parquet-row-group-size", "65536");
 
         assertThat(exitCode).isZero();
         Path output = outputDir.resolve("abbaustelle.parquet");
