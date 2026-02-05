@@ -2,8 +2,17 @@ plugins {
     id 'base'
 }
 
+ext {
+    projectGroup = 'ch.so.agi'
+    projectVersion = '0.0.1-SNAPSHOT'
+}
+
 subprojects {
+    group = projectGroup
+    version = projectVersion
+
     repositories {
+        maven { url "https://jars.sogeo.services/mirror" }    
         mavenCentral()
     }
 }

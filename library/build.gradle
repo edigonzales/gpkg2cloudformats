@@ -1,9 +1,7 @@
 plugins {
     id 'java-library'
+    id 'maven-publish'
 }
-
-group = 'ch.so.agi'
-version = '0.0.1'
 
 java {
     toolchain {
@@ -33,4 +31,36 @@ tasks.withType(Test).configureEach {
 
 tasks.named('jar', Jar) {
     archiveFileName = 'gpkg2cloudformats.jar'
+}
+
+def mavenUsername = providers.gradleProperty('mavenUsername')
+        .orElse(providers.environmentVariable('MAVEN_USERNAME'))
+def mavenPassword = providers.gradleProperty('mavenPassword')
+        .orElse(providers.environmentVariable('MAVEN_PASSWORD'))
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+            artifactId = 'gpkg2cloudformats'
+        }
+    }
+    repositories {
+        maven {
+            name = 'sogeoSnapshots'
+            url = uri('https://jars.sogeo.services/snapshots')
+            credentials(PasswordCredentials) {
+                username = mavenUsername.orNull
+                password = mavenPassword.orNull
+            }
+        }
+    }
+}
+
+tasks.withType(PublishToMavenRepository).configureEach {
+    doFirst {
+        if (!mavenUsername.present || !mavenPassword.present) {
+            throw new GradleException('Missing Maven credentials. Set mavenUsername/mavenPassword or MAVEN_USERNAME/MAVEN_PASSWORD.')
+        }
+    }
 }

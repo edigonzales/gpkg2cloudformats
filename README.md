@@ -20,6 +20,20 @@ Optionen:
 - `--tables`: optional. Semikolon-separierte Liste von Tabellennamen, mit doppelten Anfuehrungszeichen (z. B. `"abbaustelle";"surfacestructure"`)
 - `--format`: `flatgeobuf` oder `parquet`
 
+## CI/CD (GitHub Actions)
+
+Workflow: `.github/workflows/build-test-publish.yml`
+
+- Baut und testet zuerst die `library`, danach sequentiell das `cli`.
+- Bei Fehlern werden Gradle-Reports als Artefakte hochgeladen.
+- Veröffentlicht die `library` nach `https://jars.sogeo.services/snapshots` (nur auf `main`, nicht bei Pull Requests).
+- Erstellt beim manuellen Start (`workflow_dispatch`) einen GitHub Draft-Release für das CLI.
+
+Benötigte GitHub Secrets für Maven-Publishing:
+
+- `MAVEN_USERNAME`
+- `MAVEN_PASSWORD`
+
 ## Umsetzung
 
 - **Separation of Concern**: Die Export-Logik arbeitet mit generischen Tabellen-Deskriptoren (`TableDescriptorProvider`) und einem austauschbaren `GeometryReader` im neutralen Paket `ch.so.agi.cloudformats`. Dadurch ist der Export nicht an GeoPackage gebunden.
