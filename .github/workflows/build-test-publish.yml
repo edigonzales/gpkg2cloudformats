@@ -41,7 +41,7 @@ jobs:
             build/reports/**
             library/build/reports/**
             library/build/test-results/**
-
+  
       - name: Publish library snapshot to Reposilite
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
